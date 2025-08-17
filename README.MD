@@ -5,15 +5,18 @@ A simple Python Window Manager
 ## Installing Dependencies
 Arch-based
 ```
-sudo pacman -S xorg-server xorg-xinit python xterm dmenu lf
+sudo pacman -S xorg-server xorg-xinit python kitty dmenu lf
 ```
 Debian-based
 ```
-sudo apt install xserver-xorg xinit python3 dmenu xterm lf
+sudo apt install xserver-xorg xinit python3 kitty dmenu lf
 ```
 ## Installing python packages
 ```
 pip install python-xlib
+
+## For Arch its managed by pacman itself
+pacman -S python-xlib
 ```
 ## Setup
 - Clone the repository into a {directory}

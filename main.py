@@ -10,6 +10,8 @@ app_name = "simplepywm"
 
 user = os.getenv("USER")
 path = f"/home/{user}/.config/{app_name}"
+if(not os.path.isdir(f"/home/{user}/.config")):
+    os.mkdir(f"/home/{user}/.config")
 if(not os.path.isdir(path)):
     os.mkdir(path)
 
@@ -51,8 +53,8 @@ default_config = {
         }
     },
     "commands": {
-        "terminal": ["xterm"],
-        "filemanager": ["xterm", "-e", "lf"],
+        "terminal": ["kitty"],
+        "filemanager": ["kitty", "lf"],
         "launcher": ["dmenu_run"]
     }
 }
@@ -153,6 +155,7 @@ class SimplePyWM:
         self.button_passive_background_color = self.taskbar.create_gc(foreground=self.colormap.alloc_named_color(config["display"]["window"]["taskbar"]["button_passive_background_color"]).pixel)
         self.button_passive_font_color = self.taskbar.create_gc(foreground=self.colormap.alloc_named_color(config["display"]["window"]["taskbar"]["button_passive_font_color"]).pixel)
 
+        self.taskbar_buttons = []
         self.draw_taskbar()
 
     def set_frame_window_buttons(self, frame_id):
@@ -178,6 +181,11 @@ class SimplePyWM:
         geom = frame.get_geometry()
         geom_win = win.get_geometry()
         if((geom.width == screen_width) and (geom.height == screen_height - self.taskbar_height)):
+            if(frame.id not in self.old_x_y_width_height):
+                frame.configure(
+                    x=0, y=0
+                )
+                return
             frame.configure(
                 x=self.old_x_y_width_height[frame.id][0],
                 y=self.old_x_y_width_height[frame.id][1],
@@ -236,7 +244,6 @@ class SimplePyWM:
             return
 
         btn_width = width // int((n/2))
-        self.taskbar_buttons = []
 
         counter = 0
         for i, (client_id, frame) in enumerate(self.clients.items()):
@@ -274,6 +281,7 @@ class SimplePyWM:
             frame.change_attributes(background_pixel=self.active_background_color)
             frame.clear_area()
             frame.configure(stack_mode=X.Above)
+            self.clients[frame.id].set_input_focus(X.RevertToParent, X.CurrentTime)
             logger.debug(f"Set frame {frame.id} as active and raised")
         except Exception as e:
             logger.warning(f"Failed to set active frame: {e}")
