@@ -242,7 +242,8 @@ class SimplePyWM:
             return
         if int(n/2) == 0:
             return
-
+        
+        self.taskbar_buttons = []
         btn_width = width // int((n/2))
 
         counter = 0
@@ -686,6 +687,10 @@ class SimplePyWM:
                     logger.info(f"DestroyNotify - Client already gone. Destroying frame {win_id}")
                     frm.destroy()
                     del self.clients[client_id]
+        
+        if(not self.clients):
+            self.root.set_input_focus(X.RevertToPointerRoot, X.CurrentTime)
+            self.d.flush()
 
     def handle_unmap_notify(self, event):
         win_id = event.window.id
