@@ -28,9 +28,9 @@ default_config = {
     "display": {
         "window": {
             "frame": {
-                "border_width": 10,
-                "active_background_color": "green",
-                "passive_background_color": "lightblue"
+                "border_width": 20,
+                "active_background_color": "lightblue",
+                "passive_background_color": "gray"
             },
             "taskbar": {
                 "height": 30,
@@ -158,14 +158,21 @@ class SimplePyWM:
         self.taskbar_buttons = []
         self.draw_taskbar()
 
+        self.window_stack = []
+
+    def fetch_frame_using_id(self, frame_id):
+        for frame in self.clients.values():
+            if(frame.id == frame_id):
+                return frame
+
     def set_frame_window_buttons(self, frame_id):
         win = self.clients[frame_id]
         geom = win.get_geometry()
-        frame_width = geom.width + 2 * self.frame_border_width
+        frame_width = geom.width - 1
         
         for index in range(3):
             self.frame_to_button_mapping[self.clients[win.id].id][index].configure(
-                x = frame_width - ((index+2)*self.frame_border_width),
+                x = frame_width - ((index+1)*self.frame_border_width),
                 y = 0
             )
 
@@ -211,10 +218,10 @@ class SimplePyWM:
             height=screen_height - self.taskbar_height
         )
         win.configure(
-            x=border,
+            x=1,
             y=border,
-            width=screen_width - 2 * border,
-            height=screen_height - 2 * border - self.taskbar_height
+            width=screen_width - 2,
+            height=screen_height - 1 - border - self.taskbar_height
         )
 
         self.set_frame_window_buttons(frame.id)
@@ -262,6 +269,20 @@ class SimplePyWM:
             else:
                 self.taskbar.fill_rectangle(self.button_passive_background_color, x+self.button_border_width , self.button_border_width , btn_width - 2*self.button_border_width, self.taskbar_height - 2*self.button_border_width)
                 self.taskbar.draw_text(self.button_passive_font_color, x + 6, self.taskbar_height // 2 + 5, win_title[:20])
+
+    def cycle_windows(self, backwards=False):
+        if not self.window_stack:
+            return
+
+        idx = self.window_stack.index(self.active_frame.id)
+
+        if backwards:
+            new_idx = (idx - 1) % len(self.window_stack)
+        else:
+            new_idx = (idx + 1) % len(self.window_stack)
+
+        next_frame = self.window_stack[new_idx]
+        self.set_active_frame(self.fetch_frame_using_id(next_frame))
 
     def set_active_frame(self, frame):
         if(self.taskbar == frame):
@@ -311,6 +332,10 @@ class SimplePyWM:
         key_code = self.d.keysym_to_keycode(XK.XK_space)
         self.root.grab_key(key_code, X.ControlMask, True,  X.GrabModeAsync, X.GrabModeAsync)
 
+        key_code = self.d.keysym_to_keycode(XK.XK_Tab)
+        self.root.grab_key(key_code, X.Mod1Mask, True, X.GrabModeAsync, X.GrabModeAsync)
+        self.root.grab_key(key_code, X.Mod1Mask | X.ShiftMask, True, X.GrabModeAsync, X.GrabModeAsync)
+
     def handle_key_press(self, event):
         key_sym = self.d.keycode_to_keysym(event.detail, 1)
         if key_sym == XK.string_to_keysym('T') and event.state & X.ControlMask and event.state & X.ShiftMask:
@@ -326,6 +351,11 @@ class SimplePyWM:
         if event.state & X.ControlMask:
             if key_sym == XK.XK_space:
                 subprocess.Popen(config["commands"]["launcher"])
+
+        if event.state & X.Mod1Mask:
+            if key_sym == XK.XK_Tab:
+                backwards = bool(event.state & X.ShiftMask)
+                self.cycle_windows(backwards)
 
         if not self.active_frame:
             return
@@ -350,10 +380,10 @@ class SimplePyWM:
                     height=screen_height - self.taskbar_height
                 )
                 client.configure(
-                    x=frame_border,
+                    x=1,
                     y=frame_border,
-                    width=(screen_width // 2) - 2 * frame_border,
-                    height=screen_height - 2 * frame_border - self.taskbar_height
+                    width=(screen_width // 2) - 2,
+                    height=screen_height - 1 - frame_border - self.taskbar_height
                 )
 
             elif key_sym == XK.XK_Right:
@@ -364,10 +394,10 @@ class SimplePyWM:
                     height=screen_height - self.taskbar_height
                 )
                 client.configure(
-                    x=frame_border,
+                    x=1,
                     y=frame_border,
-                    width=(screen_width // 2) - 2 * frame_border,
-                    height=screen_height - 2 * frame_border - self.taskbar_height
+                    width=(screen_width // 2) - 2,
+                    height=screen_height - 1 - frame_border - self.taskbar_height
                 )
 
             elif key_sym == XK.XK_Up:
@@ -378,10 +408,10 @@ class SimplePyWM:
                     height=screen_height // 2
                 )
                 client.configure(
-                    x=frame_border,
+                    x=1,
                     y=frame_border,
-                    width=screen_width - 2 * frame_border,
-                    height=(screen_height // 2) - 2 * frame_border
+                    width=screen_width - 2,
+                    height=(screen_height // 2) - 1 - frame_border
                 )
 
             elif key_sym == XK.XK_Down:
@@ -392,10 +422,10 @@ class SimplePyWM:
                     height=screen_height // 2 - self.taskbar_height
                 )
                 client.configure(
-                    x=frame_border,
+                    x=1,
                     y=frame_border,
-                    width=screen_width - 2 * frame_border,
-                    height=(screen_height // 2) - 2 * frame_border - self.taskbar_height
+                    width=screen_width - 2,
+                    height=(screen_height // 2) - 1 - frame_border - self.taskbar_height
                 )
             self.set_frame_window_buttons(self.active_frame.id)
 
@@ -517,7 +547,7 @@ class SimplePyWM:
 
             frame.configure(width=new_width, height=new_height)
 
-            client.configure(width=new_width - 2 * border, height=new_height - 2 * border)
+            client.configure(width=new_width - 2, height=new_height - border - 1)
             self.set_frame_window_buttons(frame.id)
 
         if self.dragging and self.drag_window:
@@ -579,8 +609,8 @@ class SimplePyWM:
         border_width = self.frame_border_width
         frame = self.root.create_window(
             geom.x, geom.y,
-            geom.width + 2 * border_width,
-            geom.height + 2 * border_width,
+            geom.width + 2,
+            geom.height + border_width + 1,
             # border_width,
             0,
             self.screen.root_depth,
@@ -596,10 +626,10 @@ class SimplePyWM:
         btn_size = border_width
         padding = 0
 
-        frame_width = geom.width + 2 * border_width
+        frame_width = geom.width - 1
 
         btn_close = frame.create_window(
-            x=frame_width - 2 * (btn_size + padding),
+            x=frame_width - (btn_size + padding),
             y=padding,
             width=btn_size,
             height=btn_size,
@@ -611,7 +641,7 @@ class SimplePyWM:
             event_mask=X.ExposureMask | X.ButtonPressMask
         )
         btn_max = frame.create_window(
-            x=frame_width - 3 * (btn_size + padding),
+            x=frame_width - 2 * (btn_size + padding),
             y=padding,
             width=btn_size,
             height=btn_size,
@@ -623,7 +653,7 @@ class SimplePyWM:
             event_mask=X.ExposureMask | X.ButtonPressMask
         )
         btn_min = frame.create_window(
-            x=frame_width - 4 * (btn_size + padding),
+            x=frame_width - 3 * (btn_size + padding),
             y=padding,
             width=btn_size,
             height=btn_size,
@@ -639,7 +669,7 @@ class SimplePyWM:
         btn_max.map()
         btn_min.map()
 
-        win.reparent(frame, border_width, border_width)
+        win.reparent(frame, 1, border_width)
 
         
         frame.map()
@@ -649,6 +679,7 @@ class SimplePyWM:
         self.clients[win_id] = frame
         self.clients[frame.id] = win
 
+        self.window_stack.append(frame.id)
         self.frame_to_button_mapping[frame.id] = (btn_close, btn_max, btn_min)
 
         self.frame_window_buttons[btn_close.id] = ("close", win)
@@ -680,6 +711,12 @@ class SimplePyWM:
         frame = self.clients.pop(win_id, None)
         if frame:
             logger.info(f"DestroyNotify - Destroying frame {frame.id} for window {win_id}")
+            if(frame.id in self.window_stack):
+                if(self.active_frame.id == frame.id):
+                    idx = self.window_stack.index(frame.id)
+                    next_frame = self.window_stack[(idx - 1) % len(self.window_stack)]
+                    self.set_active_frame(self.fetch_frame_using_id(next_frame))
+                self.window_stack.remove(frame.id)
             frame.destroy()
         else:
             for client_id, frm in list(self.clients.items()):

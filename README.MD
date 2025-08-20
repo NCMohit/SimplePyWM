@@ -34,13 +34,16 @@ pacman -S python-xlib
 - Ctrl + Space      --> Dmenu Launcher
 - Ctrl + E          --> Open File manager
 - Ctrl + Q          --> Close Window Manager
+- Alt  + Tab        --> Switch to next window
+- Shift + Alt + Tab --> Switch to previous window
 
 # Features
 - Window Snapping
 - Window Dragging and Resizing
 - Window Minimizing, Maximizing, Closing
 - Taskbar
+- Alt-Tabbing windows
 
 # WIP
 - Widgets for Battery, Wifi, Sound
-- Alt-Tab Switching active window
+- Workspaces
