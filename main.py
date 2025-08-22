@@ -361,7 +361,7 @@ class SimplePyWM:
                 subprocess.Popen(config["commands"]["launcher"])
 
         if event.state & X.Mod1Mask:
-            if key_sym == XK.XK_Tab:
+            if key_sym2 == XK.XK_Tab:
                 backwards = bool(event.state & X.ShiftMask)
                 self.cycle_windows(backwards)
 
@@ -573,7 +573,6 @@ class SimplePyWM:
 
     def handle_button_release(self, event):
         if self.dragging:
-            logger.info(f"Released dragging window {event.window.id}")
             self.drag_window = None
             self.dragging = False
 
@@ -800,7 +799,6 @@ class SimplePyWM:
         btn_min.map()
 
         win.reparent(frame, 1, border_width)
-
         
         frame.map()
         win.map()
@@ -856,8 +854,6 @@ class SimplePyWM:
                     logger.info(f"DestroyNotify - Client already gone. Destroying frame {win_id}")
                     frm.destroy()
                     del self.clients[client_id]
-        
-        logger.info(f"CLIENTS: {self.clients}")
 
         if(not self.clients):
             self.root.set_input_focus(X.RevertToPointerRoot, X.CurrentTime)
