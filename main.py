@@ -332,7 +332,7 @@ class SimplePyWM:
             self.root.grab_key(key_code, X.ControlMask, True,  X.GrabModeAsync, X.GrabModeAsync)
         
         key_code = self.d.keysym_to_keycode(XK.string_to_keysym('Q'))
-        self.root.grab_key(key_code, X.ControlMask, True,  X.GrabModeAsync, X.GrabModeAsync)
+        self.root.grab_key(key_code, X.Mod4Mask, True,  X.GrabModeAsync, X.GrabModeAsync)
 
         key_code = self.d.keysym_to_keycode(XK.string_to_keysym('E'))
         self.root.grab_key(key_code, X.ControlMask, True,  X.GrabModeAsync, X.GrabModeAsync)
@@ -346,18 +346,18 @@ class SimplePyWM:
 
     def handle_key_press(self, event):
         key_sym = self.d.keycode_to_keysym(event.detail, 1)
-        if key_sym == XK.string_to_keysym('T') and event.state & X.ControlMask and event.state & X.ShiftMask:
-            subprocess.Popen(config["commands"]["terminal"])
+        key_sym2 = self.d.keycode_to_keysym(event.detail, 0)
 
-        if event.state & X.ControlMask:
+        if event.state & X.Mod4Mask:
             if key_sym == XK.XK_Q:
                 quit()
+        
+        if event.state & X.ControlMask:
+            if key_sym == XK.string_to_keysym('T') and event.state & X.ShiftMask:
+                subprocess.Popen(config["commands"]["terminal"])
             if key_sym == XK.XK_E:
                 subprocess.Popen(config["commands"]["filemanager"])
-
-        key_sym = self.d.keycode_to_keysym(event.detail, 0)
-        if event.state & X.ControlMask:
-            if key_sym == XK.XK_space:
+            if key_sym2 == XK.XK_space:
                 subprocess.Popen(config["commands"]["launcher"])
 
         if event.state & X.Mod1Mask:
@@ -376,65 +376,71 @@ class SimplePyWM:
             frame_border = self.frame_border_width
 
             client = self.clients.get(self.active_frame.id)
+            if(self.active_frame.id == client.id):
+                frame_border = 0
 
             if not client:
                 return
             
-            if key_sym == XK.XK_Left:
+            if key_sym2 == XK.XK_Left:
                 self.active_frame.configure(
                     x=0,
                     y=0,
                     width=screen_width // 2,
                     height=screen_height - self.taskbar_height
                 )
-                client.configure(
-                    x=1,
-                    y=frame_border,
-                    width=(screen_width // 2) - 2,
-                    height=screen_height - 1 - frame_border - self.taskbar_height
+                if(frame_border):
+                    client.configure(
+                        x=1,
+                        y=frame_border,
+                        width=(screen_width // 2) - 2,
+                        height=screen_height - 1 - frame_border - self.taskbar_height
                 )
 
-            elif key_sym == XK.XK_Right:
+            elif key_sym2 == XK.XK_Right:
                 self.active_frame.configure(
                     x=screen_width // 2,
                     y=0,
                     width=screen_width // 2,
                     height=screen_height - self.taskbar_height
                 )
-                client.configure(
-                    x=1,
-                    y=frame_border,
-                    width=(screen_width // 2) - 2,
-                    height=screen_height - 1 - frame_border - self.taskbar_height
-                )
+                if(frame_border):
+                    client.configure(
+                        x=1,
+                        y=frame_border,
+                        width=(screen_width // 2) - 2,
+                        height=screen_height - 1 - frame_border - self.taskbar_height
+                    )
 
-            elif key_sym == XK.XK_Up:
+            elif key_sym2 == XK.XK_Up:
                 self.active_frame.configure(
                     x=0,
                     y=0,
                     width=screen_width,
                     height=screen_height // 2
                 )
-                client.configure(
-                    x=1,
-                    y=frame_border,
-                    width=screen_width - 2,
-                    height=(screen_height // 2) - 1 - frame_border
-                )
+                if(frame_border):
+                    client.configure(
+                        x=1,
+                        y=frame_border,
+                        width=screen_width - 2,
+                        height=(screen_height // 2) - 1 - frame_border
+                    )
 
-            elif key_sym == XK.XK_Down:
+            elif key_sym2 == XK.XK_Down:
                 self.active_frame.configure(
                     x=0,
                     y=screen_height // 2,
                     width=screen_width,
                     height=screen_height // 2 - self.taskbar_height
                 )
-                client.configure(
-                    x=1,
-                    y=frame_border,
-                    width=screen_width - 2,
-                    height=(screen_height // 2) - 1 - frame_border - self.taskbar_height
-                )
+                if(frame_border):
+                    client.configure(
+                        x=1,
+                        y=frame_border,
+                        width=screen_width - 2,
+                        height=(screen_height // 2) - 1 - frame_border - self.taskbar_height
+                    )
             self.set_frame_window_buttons(self.active_frame.id)
 
     def handle_button_press(self, event):
@@ -624,13 +630,6 @@ class SimplePyWM:
         NET_WM_MOVERESIZE = self.d.intern_atom("_NET_WM_MOVERESIZE")
         WM_CHANGE_STATE = self.d.intern_atom("WM_CHANGE_STATE")
 
-        logger.info(f"Client Event Type: {event.client_type}")
-        logger.info(f"WM_PROTOCOLS: {WM_PROTOCOLS}")
-        logger.info(f"NET_WM_STATE: {NET_WM_STATE}")
-        logger.info(f"NET_WM_MOVERESIZE: {NET_WM_MOVERESIZE}")
-        logger.info(f"WM_CHANGE_STATE: {WM_CHANGE_STATE}")
-        logger.info(f"Event data: {event.data}")
-
 
         if event.client_type == NET_WM_MOVERESIZE:
             root_x = event.data[1][0]
@@ -683,12 +682,6 @@ class SimplePyWM:
             atom1 = event.data[1][1]
             atom2 = event.data[1][2]
 
-            logger.info(f"Atom1: {atom1}")
-            logger.info(f"Action: {action}")
-            logger.info(f"NET_WM_STATE_MAXIMIZED_VERT: {NET_WM_STATE_MAXIMIZED_VERT}")
-            logger.info(f"NET_WM_STATE_MAXIMIZED_HORZ: {NET_WM_STATE_MAXIMIZED_HORZ}")
-            logger.info(f"NET_WM_STATE_HIDDEN: {NET_WM_STATE_HIDDEN}")
-
             if atom1 in (NET_WM_STATE_MAXIMIZED_VERT, NET_WM_STATE_MAXIMIZED_HORZ) or atom2 in (NET_WM_STATE_MAXIMIZED_VERT, NET_WM_STATE_MAXIMIZED_HORZ):
                 if action in (1, 2):  # add or toggle
                     self.maximize_window(event.window)
@@ -731,7 +724,7 @@ class SimplePyWM:
         if self.wants_no_border(win):
             win.change_attributes(event_mask=X.ButtonPressMask | X.ButtonReleaseMask | X.PointerMotionMask | X.SubstructureRedirectMask | X.SubstructureNotifyMask)
             win.map()
-            self.clients["dummy_frame"] = win
+            self.clients[f"dummy_frame_{win_id}"] = win
             self.clients[win_id] = win
             self.window_stack.append(win.id)
 
@@ -854,6 +847,8 @@ class SimplePyWM:
                     next_frame = self.window_stack[(idx - 1) % len(self.window_stack)]
                     self.set_active_frame(self.fetch_frame_using_id(next_frame))
                 self.window_stack.remove(frame.id)
+            if(frame.id in self.borderless_windows):
+                del self.clients[f"dummy_frame_{frame.id}"]
             frame.destroy()
         else:
             for client_id, frm in list(self.clients.items()):
@@ -862,6 +857,8 @@ class SimplePyWM:
                     frm.destroy()
                     del self.clients[client_id]
         
+        logger.info(f"CLIENTS: {self.clients}")
+
         if(not self.clients):
             self.root.set_input_focus(X.RevertToPointerRoot, X.CurrentTime)
             self.d.flush()
