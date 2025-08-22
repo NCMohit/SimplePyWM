@@ -160,6 +160,8 @@ class SimplePyWM:
 
         self.window_stack = []
 
+        self.borderless_windows = []
+
     def fetch_frame_using_id(self, frame_id):
         for frame in self.clients.values():
             if(frame.id == frame_id):
@@ -167,6 +169,8 @@ class SimplePyWM:
 
     def set_frame_window_buttons(self, frame_id):
         win = self.clients[frame_id]
+        if(win.id == frame_id):
+            return
         geom = win.get_geometry()
         frame_width = geom.width - 1
         
@@ -217,11 +221,16 @@ class SimplePyWM:
             width=screen_width,
             height=screen_height - self.taskbar_height
         )
+        top = border
+        height = screen_height - 1 - border - self.taskbar_height
+        if(win.id == frame.id):
+            top = 0
+            height = screen_height - 1 - self.taskbar_height
         win.configure(
             x=1,
-            y=border,
+            y=top,
             width=screen_width - 2,
-            height=screen_height - 1 - border - self.taskbar_height
+            height=height
         )
 
         self.set_frame_window_buttons(frame.id)
@@ -238,7 +247,6 @@ class SimplePyWM:
             else:
                 return "Unknown"
         except Exception as e:
-            logger.warning(f"Failed to get WM_CLASS for window {win}: {e}")
             return "Unknown"
 
     def draw_taskbar(self):
@@ -444,9 +452,21 @@ class SimplePyWM:
                 target_win.unmap()
             return
 
+        if event.window.id == self.taskbar.id:
+            x = event.event_x
+            for btn_x, client_id in self.taskbar_buttons:
+                if x >= btn_x and x < btn_x + self.screen.width_in_pixels // (len(self.clients)/2):
+                    frame = self.clients[client_id]
+                    self.set_active_frame(frame)
+                    break
+            return
+
         win = event.window
 
         self.set_active_frame(win)
+
+        if win.id in self.clients and self.clients[win.id] == win:
+            return
 
         geom = win.get_geometry()
         frame_width = geom.width
@@ -487,15 +507,6 @@ class SimplePyWM:
             X.GrabModeAsync, X.GrabModeAsync,
             X.NONE, X.NONE, X.CurrentTime)
 
-        if event.window.id == self.taskbar.id:
-            x = event.event_x
-            for btn_x, client_id in self.taskbar_buttons:
-                if x >= btn_x and x < btn_x + self.screen.width_in_pixels // (len(self.clients)/2):
-                    frame = self.clients[client_id]
-                    self.set_active_frame(frame)
-                    break
-            return
-
     def handle_motion_notify(self, event):
         win = event.window
 
@@ -534,40 +545,153 @@ class SimplePyWM:
             dy = event.root_y - start_y
 
             frame_geom = self.resize_start_geom
-            border = self.frame_border_width
 
             new_width = frame_geom.width
             new_height = frame_geom.height
 
             if self.resize_mode in ("horizontal", "both"):
-                new_width = max(50, frame_geom.width + dx)
+                new_width = frame_geom.width + dx
             if self.resize_mode in ("vertical", "both"):
-                new_height = max(50, frame_geom.height + dy)
-
+                new_height = frame_geom.height + dy
 
             frame.configure(width=new_width, height=new_height)
 
-            client.configure(width=new_width - 2, height=new_height - border - 1)
-            self.set_frame_window_buttons(frame.id)
+            client.configure(width=new_width - 2, height=new_height - self.frame_border_width - 1)
 
         if self.dragging and self.drag_window:
             offset_x, offset_y = self.drag_start_pos
             new_x = event.root_x - offset_x
             new_y = event.root_y - offset_y
-            
+
             self.drag_window.configure(x=new_x, y=new_y)
 
     def handle_button_release(self, event):
         if self.dragging:
+            logger.info(f"Released dragging window {event.window.id}")
             self.drag_window = None
             self.dragging = False
 
         if self.resizing:
+            self.set_frame_window_buttons(self.resize_window.id)
             self.resize_window = None
             self.resizing = False
             self.resize_mode = None
 
         self.d.ungrab_pointer(X.CurrentTime)
+
+    def wants_no_border(self, win):
+        try:
+            # --- Motif Hints ---
+            motif_hints = self.d.intern_atom("_MOTIF_WM_HINTS")
+            prop = win.get_full_property(motif_hints, X.AnyPropertyType)
+            if prop:
+                hints = prop.value
+                if len(hints) >= 3:
+                    decorations = hints[2]
+                    if decorations == 0:
+                        return True
+        except Exception as e:
+            logger.debug(f"Motif hint check failed for {win.id}: {e}")
+
+        try:
+            # --- EWMH Window Types ---
+            NET_WM_WINDOW_TYPE = self.d.intern_atom("_NET_WM_WINDOW_TYPE")
+            NET_WM_WINDOW_TYPE_DIALOG = self.d.intern_atom("_NET_WM_WINDOW_TYPE_DIALOG")
+            NET_WM_WINDOW_TYPE_SPLASH = self.d.intern_atom("_NET_WM_WINDOW_TYPE_SPLASH")
+            NET_WM_WINDOW_TYPE_DOCK = self.d.intern_atom("_NET_WM_WINDOW_TYPE_DOCK")
+
+            prop = win.get_full_property(NET_WM_WINDOW_TYPE, X.AnyPropertyType)
+            if prop:
+                for t in prop.value:
+                    if t in (NET_WM_WINDOW_TYPE_DIALOG,
+                            NET_WM_WINDOW_TYPE_SPLASH,
+                            NET_WM_WINDOW_TYPE_DOCK):
+                        return True
+        except Exception as e:
+            logger.debug(f"EWMH type check failed for {win.id}: {e}")
+
+        return False
+
+    def handle_client_message(self, event):
+        if(event.window.id not in self.borderless_windows):
+            return
+        WM_PROTOCOLS = self.d.intern_atom("WM_PROTOCOLS")
+        WM_DELETE_WINDOW = self.d.intern_atom("WM_DELETE_WINDOW")
+        NET_WM_STATE = self.d.intern_atom("_NET_WM_STATE")
+        NET_WM_STATE_MAXIMIZED_VERT = self.d.intern_atom("_NET_WM_STATE_MAXIMIZED_VERT")
+        NET_WM_STATE_MAXIMIZED_HORZ = self.d.intern_atom("_NET_WM_STATE_MAXIMIZED_HORZ")
+        NET_WM_STATE_HIDDEN = self.d.intern_atom("_NET_WM_STATE_HIDDEN")
+        NET_WM_MOVERESIZE = self.d.intern_atom("_NET_WM_MOVERESIZE")
+        WM_CHANGE_STATE = self.d.intern_atom("WM_CHANGE_STATE")
+
+        logger.info(f"Client Event Type: {event.client_type}")
+        logger.info(f"WM_PROTOCOLS: {WM_PROTOCOLS}")
+        logger.info(f"NET_WM_STATE: {NET_WM_STATE}")
+        logger.info(f"NET_WM_MOVERESIZE: {NET_WM_MOVERESIZE}")
+        logger.info(f"WM_CHANGE_STATE: {WM_CHANGE_STATE}")
+        logger.info(f"Event data: {event.data}")
+
+
+        if event.client_type == NET_WM_MOVERESIZE:
+            root_x = event.data[1][0]
+            root_y = event.data[1][1]
+            geom = event.window.get_geometry()
+            # Drag
+            if(event.data[1][2] == 8):
+                self.dragging = True
+                self.drag_window = event.window
+                self.drag_start_pos = (root_x - geom.x, root_y - geom.y)
+            # Vertical
+            if(event.data[1][2] == 5):
+                self.resizing = True
+                self.resize_window = event.window
+                self.resize_start_pos = (root_x, root_y)
+                self.resize_start_geom = geom
+                self.resize_mode = "vertical"
+            # Horizontal
+            if(event.data[1][2] == 3):
+                self.resizing = True
+                self.resize_window = event.window
+                self.resize_start_pos = (root_x, root_y)
+                self.resize_start_geom = geom
+                self.resize_mode = "horizontal"
+            # Both
+            if(event.data[1][2] == 4):
+                self.resizing = True
+                self.resize_window = event.window
+                self.resize_start_pos = (root_x, root_y)
+                self.resize_start_geom = geom
+                self.resize_mode = "both"
+            event.window.grab_pointer(True,
+                X.PointerMotionMask | X.ButtonReleaseMask,
+                X.GrabModeAsync, X.GrabModeAsync,
+                X.NONE, X.NONE, X.CurrentTime)
+
+        if event.client_type == WM_CHANGE_STATE:
+            event.window.unmap()
+
+        if event.client_type == WM_PROTOCOLS:
+            if event.data[0] == WM_DELETE_WINDOW:
+                logger.info(f"Client requested close: {event.window.id}")
+                try:
+                    event.window.destroy()
+                except Exception as e:
+                    logger.warning(f"Failed to destroy window {event.window.id}: {e}")
+
+        if event.client_type == NET_WM_STATE:
+            action = event.data[1][0]
+            atom1 = event.data[1][1]
+            atom2 = event.data[1][2]
+
+            logger.info(f"Atom1: {atom1}")
+            logger.info(f"Action: {action}")
+            logger.info(f"NET_WM_STATE_MAXIMIZED_VERT: {NET_WM_STATE_MAXIMIZED_VERT}")
+            logger.info(f"NET_WM_STATE_MAXIMIZED_HORZ: {NET_WM_STATE_MAXIMIZED_HORZ}")
+            logger.info(f"NET_WM_STATE_HIDDEN: {NET_WM_STATE_HIDDEN}")
+
+            if atom1 in (NET_WM_STATE_MAXIMIZED_VERT, NET_WM_STATE_MAXIMIZED_HORZ) or atom2 in (NET_WM_STATE_MAXIMIZED_VERT, NET_WM_STATE_MAXIMIZED_HORZ):
+                if action in (1, 2):  # add or toggle
+                    self.maximize_window(event.window)
 
     def run(self):
         while True:
@@ -592,6 +716,8 @@ class SimplePyWM:
                 self.handle_motion_notify(event)
             if event.type == X.ButtonRelease:
                 self.handle_button_release(event)
+            if event.type == X.ClientMessage:
+                self.handle_client_message(event)
             self.draw_taskbar()
 
     def handle_map_request(self, event):
@@ -602,6 +728,17 @@ class SimplePyWM:
             win.map()
             return
 
+        if self.wants_no_border(win):
+            win.change_attributes(event_mask=X.ButtonPressMask | X.ButtonReleaseMask | X.PointerMotionMask | X.SubstructureRedirectMask | X.SubstructureNotifyMask)
+            win.map()
+            self.clients["dummy_frame"] = win
+            self.clients[win_id] = win
+            self.window_stack.append(win.id)
+
+            self.borderless_windows.append(win.id)
+            self.set_active_frame(win)
+            logger.info(f"Mapped borderless window {win_id} without frame")
+            return
 
         attrs = win.get_attributes()
         geom = win.get_geometry()
