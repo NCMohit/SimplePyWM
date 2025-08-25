@@ -33,7 +33,7 @@ pacman -S python-xlib
 - Ctrl + Arrow Keys --> Snap Active window
 - Ctrl + Space      --> Dmenu Launcher
 - Ctrl + E          --> Open File manager
-- Ctrl + Q          --> Close Window Manager
+- Windows + Q          --> Close Window Manager
 - Alt  + Tab        --> Switch to next window
 - Shift + Alt + Tab --> Switch to previous window
 

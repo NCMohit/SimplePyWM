@@ -70,7 +70,8 @@ class SimplePyWM:
         self.d = display.Display()
         self.screen = self.d.screen()
         self.root = self.screen.root
-        self.clients = {}
+        self.frame_to_client = {}
+        self.client_to_frame = {}
         self.frame_window_buttons = {}
         self.frame_to_button_mapping = {}
         self.old_x_y_width_height = {}
@@ -156,32 +157,40 @@ class SimplePyWM:
         self.button_passive_font_color = self.taskbar.create_gc(foreground=self.colormap.alloc_named_color(config["display"]["window"]["taskbar"]["button_passive_font_color"]).pixel)
 
         self.taskbar_buttons = []
+        self.borderless_windows = {}
         self.draw_taskbar()
 
         self.window_stack = []
 
-        self.borderless_windows = []
-
-    def fetch_frame_using_id(self, frame_id):
-        for frame in self.clients.values():
-            if(frame.id == frame_id):
-                return frame
+    def fetch_win_using_id(self, win_id):
+        if(win_id in self.borderless_windows):
+            return self.borderless_windows[win_id]
+        
+        if(win_id in self.client_to_frame):
+            return self.frame_to_client[self.client_to_frame[win_id].id]
 
     def set_frame_window_buttons(self, frame_id):
-        win = self.clients[frame_id]
-        if(win.id == frame_id):
+        if(frame_id in self.borderless_windows):
             return
+        win = self.frame_to_client[frame_id]
         geom = win.get_geometry()
         frame_width = geom.width - 1
         
         for index in range(3):
-            self.frame_to_button_mapping[self.clients[win.id].id][index].configure(
+            self.frame_to_button_mapping[self.client_to_frame[win.id].id][index].configure(
                 x = frame_width - ((index+1)*self.frame_border_width),
                 y = 0
             )
 
     def maximize_window(self, win):
-        frame = self.clients.get(win.id)
+        borderless = 0
+        if(win.id in self.borderless_windows):
+            borderless = 1
+
+        if(borderless):
+            frame = self.borderless_windows[win.id]
+        else:
+            frame = self.client_to_frame.get(win.id)
         if not frame:
             return
 
@@ -209,7 +218,8 @@ class SimplePyWM:
                 width=self.old_x_y_width_height[win.id][2],
                 height=self.old_x_y_width_height[win.id][3]
             )
-            self.set_frame_window_buttons(frame.id)
+            if(not borderless):
+                self.set_frame_window_buttons(frame.id)
             return
 
         self.old_x_y_width_height[frame.id] = (geom.x, geom.y, geom.width, geom.height)
@@ -221,19 +231,17 @@ class SimplePyWM:
             width=screen_width,
             height=screen_height - self.taskbar_height
         )
-        top = border
-        height = screen_height - 1 - border - self.taskbar_height
-        if(win.id == frame.id):
-            top = 0
-            height = screen_height - 1 - self.taskbar_height
-        win.configure(
-            x=1,
-            y=top,
-            width=screen_width - 2,
-            height=height
-        )
+        if(not borderless):
+            top = border
+            height = screen_height - 1 - border - self.taskbar_height
+            win.configure(
+                x=1,
+                y=top,
+                width=screen_width - 2,
+                height=height
+            )
 
-        self.set_frame_window_buttons(frame.id)
+            self.set_frame_window_buttons(frame.id)
 
 
     def get_window_title(self, win):
@@ -252,26 +260,23 @@ class SimplePyWM:
     def draw_taskbar(self):
 
         width = self.screen.width_in_pixels
-        n = len(self.clients)
+        n = len(self.frame_to_client) + len(self.borderless_windows)
         if n == 0:
             return
-        if int(n/2) == 0:
-            return
-        
+
         self.taskbar_buttons = []
-        btn_width = width // int((n/2))
+        btn_width = width // n
 
         counter = 0
-        for i, (client_id, frame) in enumerate(self.clients.items()):
-            win_title = self.get_window_title(client_id)
-            if(win_title == "Unknown"):
-                continue
+        for client_id in self.window_stack:
+            client = self.fetch_win_using_id(client_id)
+            win_title = self.get_window_title(client)
             x = counter * btn_width
             counter += 1
 
             self.taskbar_buttons.append((x, client_id))
 
-            if(self.active_frame == frame):
+            if(self.active_frame == client):
                 self.taskbar.fill_rectangle(self.button_active_background_color, x+self.button_border_width , self.button_border_width , btn_width - 2*self.button_border_width, self.taskbar_height - 2*self.button_border_width)
                 self.taskbar.draw_text(self.button_active_font_color, x + 6, self.taskbar_height // 2 + 5, win_title[:20])
             else:
@@ -290,29 +295,36 @@ class SimplePyWM:
             new_idx = (idx + 1) % len(self.window_stack)
 
         next_frame = self.window_stack[new_idx]
-        self.set_active_frame(self.fetch_frame_using_id(next_frame))
+        self.set_active_frame(self.fetch_win_using_id(next_frame))
 
-    def set_active_frame(self, frame):
-        if(self.taskbar == frame):
+    def set_active_frame(self, win):
+        if(self.taskbar == win):
             return
 
-        if self.active_frame and self.active_frame != frame:
+        if self.active_frame and self.active_frame != win:
             try:
-                self.active_frame.change_attributes(background_pixel=self.passive_background_color)
-                self.active_frame.clear_area()
+                if(self.active_frame.id not in self.borderless_windows):
+                    self.client_to_frame[self.active_frame.id].change_attributes(background_pixel=self.passive_background_color)
+                    self.client_to_frame[self.active_frame.id].clear_area()
             except Exception as e:
                 logger.warning(f"Failed to deactivate previous frame: {e}")
 
-        self.active_frame = frame
+        self.active_frame = win
 
         try:
-            frame.map()
-            self.clients[frame.id].map()
-            frame.change_attributes(background_pixel=self.active_background_color)
-            frame.clear_area()
-            frame.configure(stack_mode=X.Above)
-            self.clients[frame.id].set_input_focus(X.RevertToParent, X.CurrentTime)
-            logger.debug(f"Set frame {frame.id} as active and raised")
+            borderless = 0
+            if(self.active_frame.id in self.borderless_windows):
+                borderless = 1
+            win.map()
+            if(not borderless):
+                self.client_to_frame[win.id].map()
+                self.client_to_frame[win.id].change_attributes(background_pixel=self.active_background_color)
+                self.client_to_frame[win.id].clear_area()
+                self.client_to_frame[win.id].configure(stack_mode=X.Above)
+            else:
+                win.configure(stack_mode=X.Above)
+            win.set_input_focus(X.RevertToParent, X.CurrentTime)
+            logger.debug(f"Set frame {win.id} as active and raised")
         except Exception as e:
             logger.warning(f"Failed to set active frame: {e}")
         
@@ -375,22 +387,24 @@ class SimplePyWM:
 
             frame_border = self.frame_border_width
 
-            client = self.clients.get(self.active_frame.id)
-            if(self.active_frame.id == client.id):
+            if(self.active_frame.id in self.borderless_windows):
                 frame_border = 0
+                frame = self.active_frame
+            else:
+                frame = self.client_to_frame[self.active_frame.id]
 
-            if not client:
+            if not frame:
                 return
             
             if key_sym2 == XK.XK_Left:
-                self.active_frame.configure(
+                frame.configure(
                     x=0,
                     y=0,
                     width=screen_width // 2,
                     height=screen_height - self.taskbar_height
                 )
                 if(frame_border):
-                    client.configure(
+                    self.active_frame.configure(
                         x=1,
                         y=frame_border,
                         width=(screen_width // 2) - 2,
@@ -398,14 +412,14 @@ class SimplePyWM:
                 )
 
             elif key_sym2 == XK.XK_Right:
-                self.active_frame.configure(
+                frame.configure(
                     x=screen_width // 2,
                     y=0,
                     width=screen_width // 2,
                     height=screen_height - self.taskbar_height
                 )
                 if(frame_border):
-                    client.configure(
+                    self.active_frame.configure(
                         x=1,
                         y=frame_border,
                         width=(screen_width // 2) - 2,
@@ -413,14 +427,14 @@ class SimplePyWM:
                     )
 
             elif key_sym2 == XK.XK_Up:
-                self.active_frame.configure(
+                frame.configure(
                     x=0,
                     y=0,
                     width=screen_width,
                     height=screen_height // 2
                 )
                 if(frame_border):
-                    client.configure(
+                    self.active_frame.configure(
                         x=1,
                         y=frame_border,
                         width=screen_width - 2,
@@ -428,20 +442,21 @@ class SimplePyWM:
                     )
 
             elif key_sym2 == XK.XK_Down:
-                self.active_frame.configure(
+                frame.configure(
                     x=0,
                     y=screen_height // 2,
                     width=screen_width,
                     height=screen_height // 2 - self.taskbar_height
                 )
                 if(frame_border):
-                    client.configure(
+                    self.active_frame.configure(
                         x=1,
                         y=frame_border,
                         width=screen_width - 2,
                         height=(screen_height // 2) - 1 - frame_border - self.taskbar_height
                     )
-            self.set_frame_window_buttons(self.active_frame.id)
+            if(frame_border != 0):
+                self.set_frame_window_buttons(frame.id)
 
     def handle_button_press(self, event):
         if event.detail != 1:
@@ -453,7 +468,7 @@ class SimplePyWM:
             if action == "close":
                 target_win.destroy()
             elif action == "maximize":
-                self.maximize_window(target_win)
+                self.maximize_window(self.frame_to_client[target_win.id])
             elif action == "minimize":
                 target_win.unmap()
             return
@@ -461,20 +476,19 @@ class SimplePyWM:
         if event.window.id == self.taskbar.id:
             x = event.event_x
             for btn_x, client_id in self.taskbar_buttons:
-                if x >= btn_x and x < btn_x + self.screen.width_in_pixels // (len(self.clients)/2):
-                    frame = self.clients[client_id]
-                    self.set_active_frame(frame)
+                if x >= btn_x and x < btn_x + self.screen.width_in_pixels // (len(self.frame_to_client) + len(self.borderless_windows)):
+                    win = self.fetch_win_using_id(client_id)
+                    self.set_active_frame(win)
                     break
             return
 
-        win = event.window
+        frame = event.window
+        self.set_active_frame(self.frame_to_client[frame.id])
 
-        self.set_active_frame(win)
-
-        if win.id in self.clients and self.clients[win.id] == win:
+        if(event.window.id in self.borderless_windows):
             return
 
-        geom = win.get_geometry()
+        geom = frame.get_geometry()
         frame_width = geom.width
         frame_height = geom.height
         margin = 10
@@ -499,16 +513,16 @@ class SimplePyWM:
 
         if resize_mode:
             self.resizing = True
-            self.resize_window = win
+            self.resize_window = frame
             self.resize_start_pos = (root_x, root_y)
             self.resize_start_geom = geom
             self.resize_mode = resize_mode
         else:
             self.dragging = True
-            self.drag_window = win
+            self.drag_window = frame
             self.drag_start_pos = (root_x - geom.x, root_y - geom.y)
 
-        win.grab_pointer(True,
+        frame.grab_pointer(True,
             X.PointerMotionMask | X.ButtonReleaseMask,
             X.GrabModeAsync, X.GrabModeAsync,
             X.NONE, X.NONE, X.CurrentTime)
@@ -540,7 +554,7 @@ class SimplePyWM:
         
         if self.resizing and self.resize_window:
             frame = self.resize_window
-            client = self.clients.get(frame.id)
+            client = self.frame_to_client[frame.id]
 
             if not client:
                 logger.warning(f"No client found for frame {frame.id}")
@@ -637,6 +651,7 @@ class SimplePyWM:
             # Drag
             if(event.data[1][2] == 8):
                 self.dragging = True
+                self.set_active_frame(event.window)
                 self.drag_window = event.window
                 self.drag_start_pos = (root_x - geom.x, root_y - geom.y)
             # Vertical
@@ -716,18 +731,16 @@ class SimplePyWM:
         win = event.window
         win_id = win.id
 
-        if win_id in self.clients:
+        if win_id in self.client_to_frame:
             win.map()
             return
 
         if self.wants_no_border(win):
-            win.change_attributes(event_mask=X.ButtonPressMask | X.ButtonReleaseMask | X.PointerMotionMask | X.SubstructureRedirectMask | X.SubstructureNotifyMask)
+            win.change_attributes(event_mask=X.ButtonPressMask | X.ButtonReleaseMask | X.SubstructureRedirectMask | X.SubstructureNotifyMask)
             win.map()
-            self.clients[f"dummy_frame_{win_id}"] = win
-            self.clients[win_id] = win
             self.window_stack.append(win.id)
 
-            self.borderless_windows.append(win.id)
+            self.borderless_windows[win.id] = win
             self.set_active_frame(win)
             logger.info(f"Mapped borderless window {win_id} without frame")
             return
@@ -804,17 +817,17 @@ class SimplePyWM:
         win.map()
 
 
-        self.clients[win_id] = frame
-        self.clients[frame.id] = win
+        self.client_to_frame[win_id] = frame
+        self.frame_to_client[frame.id] = win
 
-        self.window_stack.append(frame.id)
+        self.window_stack.append(win.id)
         self.frame_to_button_mapping[frame.id] = (btn_close, btn_max, btn_min)
 
-        self.frame_window_buttons[btn_close.id] = ("close", win)
-        self.frame_window_buttons[btn_max.id] = ("maximize", win)
-        self.frame_window_buttons[btn_min.id] = ("minimize", win)
+        self.frame_window_buttons[btn_close.id] = ("close", frame)
+        self.frame_window_buttons[btn_max.id] = ("maximize", frame)
+        self.frame_window_buttons[btn_min.id] = ("minimize", frame)
 
-        self.set_active_frame(frame)
+        self.set_active_frame(win)
 
     def handle_configure_request(self, event):
         values = {}
@@ -836,35 +849,70 @@ class SimplePyWM:
 
     def handle_destroy_notify(self, event):
         win_id = event.window.id
-        frame = self.clients.pop(win_id, None)
-        if frame:
-            logger.info(f"DestroyNotify - Destroying frame {frame.id} for window {win_id}")
-            if(frame.id in self.window_stack):
-                if(self.active_frame.id == frame.id):
-                    idx = self.window_stack.index(frame.id)
-                    next_frame = self.window_stack[(idx - 1) % len(self.window_stack)]
-                    self.set_active_frame(self.fetch_frame_using_id(next_frame))
-                self.window_stack.remove(frame.id)
-            if(frame.id in self.borderless_windows):
-                del self.clients[f"dummy_frame_{frame.id}"]
+
+        borderless = 0
+        not_tracked = 0
+        if(win_id in self.borderless_windows):
+            win = self.borderless_windows[win_id]
+            borderless = 1
+        else:
+            if(win_id in self.frame_to_client):
+                win = self.frame_to_client[win_id]
+                frame = self.client_to_frame[win.id]
+            elif(win_id in self.client_to_frame):
+                frame = self.client_to_frame[win_id]
+                win = self.frame_to_client[frame.id]
+            else:
+                not_tracked = 1
+        
+        if(not_tracked):
+            return
+        if(win.id in self.window_stack):
+            if(self.active_frame.id == win.id):
+                idx = self.window_stack.index(win.id)
+                next_frame = self.window_stack[(idx - 1) % len(self.window_stack)]
+                self.set_active_frame(self.fetch_win_using_id(next_frame))
+            self.window_stack.remove(win.id)
+        
+        if(not borderless):
+            del self.frame_to_client[frame.id]
+            del self.client_to_frame[win.id]
             frame.destroy()
         else:
-            for client_id, frm in list(self.clients.items()):
-                if frm.id == win_id:
-                    logger.info(f"DestroyNotify - Client already gone. Destroying frame {win_id}")
-                    frm.destroy()
-                    del self.clients[client_id]
+            del self.borderless_windows[win.id]
+        win.destroy()
 
-        if(not self.clients):
-            self.root.set_input_focus(X.RevertToPointerRoot, X.CurrentTime)
-            self.d.flush()
+        if(not self.frame_to_client):
+            if(not len(self.borderless_windows)):
+                self.active_frame = None
+                self.root.set_input_focus(X.RevertToPointerRoot, X.CurrentTime)
+                self.d.flush()
+        
+        logger.info(f"Window Stack: {self.window_stack}")
 
     def handle_unmap_notify(self, event):
         win_id = event.window.id
-        frame = self.clients.get(win_id)
-        if frame:
-            logger.debug(f"UnmapNotify - Unmapping frame {frame.id} for window {win_id}")
+
+        borderless = 0
+        not_tracked = 0
+        if(win_id in self.borderless_windows):
+            win = self.borderless_windows[win_id]
+            borderless = 1
+        else:
+            if(win_id in self.frame_to_client):
+                win = self.frame_to_client[win_id]
+                frame = self.client_to_frame[win.id]
+            elif(win_id in self.client_to_frame):
+                frame = self.client_to_frame[win_id]
+                win = self.frame_to_client[frame.id]
+            else:
+                not_tracked = 1
+        if(not_tracked):
+            return
+        
+        if(not borderless):
             frame.unmap()
+        win.unmap()
 
 if __name__ == "__main__":
     try:
