@@ -83,7 +83,7 @@ class SimplePyWM:
         self.resize_start_geom = None
         self.resize_start_pos = (0, 0)
         self.resize_mode = None
-        self.active_frame = None
+        self.active_frame = {1:None}
         self.frame_border_width = config["display"]["window"]["frame"]["border_width"]
         self.button_border_width = config["display"]["window"]["taskbar"]["button_border_width"]
 
@@ -156,11 +156,13 @@ class SimplePyWM:
         self.button_passive_background_color = self.taskbar.create_gc(foreground=self.colormap.alloc_named_color(config["display"]["window"]["taskbar"]["button_passive_background_color"]).pixel)
         self.button_passive_font_color = self.taskbar.create_gc(foreground=self.colormap.alloc_named_color(config["display"]["window"]["taskbar"]["button_passive_font_color"]).pixel)
 
-        self.taskbar_buttons = []
+        self.taskbar_buttons = {}
         self.borderless_windows = {}
-        self.draw_taskbar()
+        self.window_stack = {1:[]}
+        self.workspaces = {1:{}}
+        self.current_workspace = 1
 
-        self.window_stack = []
+        self.draw_taskbar()
 
     def fetch_win_using_id(self, win_id):
         if(win_id in self.borderless_windows):
@@ -181,6 +183,40 @@ class SimplePyWM:
                 x = frame_width - ((index+1)*self.frame_border_width),
                 y = 0
             )
+
+    def switch_workspace(self, workspace_id):
+        if(workspace_id == self.current_workspace):
+            return
+        
+        logger.info(self.workspaces)
+
+        old_workspace = self.current_workspace
+        self.current_workspace = workspace_id
+
+        if(self.current_workspace not in self.workspaces):
+            self.active_frame[self.current_workspace] = None
+            self.window_stack[self.current_workspace] = []
+            self.workspaces[self.current_workspace] = {}
+        if(not len(self.workspaces[self.current_workspace])):
+            self.root.set_input_focus(X.RevertToPointerRoot, X.CurrentTime)
+            self.d.flush()
+
+        for win_id in self.workspaces[old_workspace]:
+            if(win_id in self.borderless_windows):
+                self.borderless_windows[win_id].unmap()
+            else:
+                self.frame_to_client[self.client_to_frame[win_id].id].unmap()
+        
+        for win_id in self.workspaces[self.current_workspace]:
+            logger.info(f"Mapping {win_id} with {self.workspaces[self.current_workspace][win_id]}")
+            if(self.workspaces[self.current_workspace][win_id] == "max"):
+                if(win_id in self.borderless_windows):
+                    self.borderless_windows[win_id].map()
+                else:
+                    self.client_to_frame[win_id].map()
+                    self.frame_to_client[self.client_to_frame[win_id].id].map()
+        if(self.active_frame[self.current_workspace]):
+            self.set_active_frame(self.active_frame[self.current_workspace])
 
     def maximize_window(self, win):
         borderless = 0
@@ -259,8 +295,12 @@ class SimplePyWM:
 
     def draw_taskbar(self):
 
-        width = self.screen.width_in_pixels
-        n = len(self.frame_to_client) + len(self.borderless_windows)
+        width = self.screen.width_in_pixels - 20
+        n = len(self.window_stack[self.current_workspace])
+
+        self.taskbar.fill_rectangle(self.button_passive_background_color, self.button_border_width , self.button_border_width , 20 - 2*self.button_border_width, self.taskbar_height - 2*self.button_border_width)
+        self.taskbar.draw_text(self.button_passive_font_color, 6, self.taskbar_height // 2 + 5, str(self.current_workspace))
+
         if n == 0:
             return
 
@@ -268,15 +308,15 @@ class SimplePyWM:
         btn_width = width // n
 
         counter = 0
-        for client_id in self.window_stack:
+        for client_id in self.window_stack[self.current_workspace]:
             client = self.fetch_win_using_id(client_id)
             win_title = self.get_window_title(client)
-            x = counter * btn_width
+            x = (counter * btn_width) + 20
             counter += 1
 
             self.taskbar_buttons.append((x, client_id))
 
-            if(self.active_frame == client):
+            if(self.active_frame[self.current_workspace] == client):
                 self.taskbar.fill_rectangle(self.button_active_background_color, x+self.button_border_width , self.button_border_width , btn_width - 2*self.button_border_width, self.taskbar_height - 2*self.button_border_width)
                 self.taskbar.draw_text(self.button_active_font_color, x + 6, self.taskbar_height // 2 + 5, win_title[:20])
             else:
@@ -284,36 +324,36 @@ class SimplePyWM:
                 self.taskbar.draw_text(self.button_passive_font_color, x + 6, self.taskbar_height // 2 + 5, win_title[:20])
 
     def cycle_windows(self, backwards=False):
-        if not self.window_stack:
+        if not self.window_stack[self.current_workspace]:
             return
 
-        idx = self.window_stack.index(self.active_frame.id)
+        idx = self.window_stack[self.current_workspace].index(self.active_frame[self.current_workspace].id)
 
         if backwards:
-            new_idx = (idx - 1) % len(self.window_stack)
+            new_idx = (idx - 1) % len(self.window_stack[self.current_workspace])
         else:
-            new_idx = (idx + 1) % len(self.window_stack)
+            new_idx = (idx + 1) % len(self.window_stack[self.current_workspace])
 
-        next_frame = self.window_stack[new_idx]
+        next_frame = self.window_stack[self.current_workspace][new_idx]
         self.set_active_frame(self.fetch_win_using_id(next_frame))
 
     def set_active_frame(self, win):
         if(self.taskbar == win):
             return
 
-        if self.active_frame and self.active_frame != win:
+        if self.active_frame[self.current_workspace] and self.active_frame[self.current_workspace] != win:
             try:
-                if(self.active_frame.id not in self.borderless_windows):
-                    self.client_to_frame[self.active_frame.id].change_attributes(background_pixel=self.passive_background_color)
-                    self.client_to_frame[self.active_frame.id].clear_area()
+                if(self.active_frame[self.current_workspace].id not in self.borderless_windows):
+                    self.client_to_frame[self.active_frame[self.current_workspace].id].change_attributes(background_pixel=self.passive_background_color)
+                    self.client_to_frame[self.active_frame[self.current_workspace].id].clear_area()
             except Exception as e:
                 logger.warning(f"Failed to deactivate previous frame: {e}")
 
-        self.active_frame = win
+        self.active_frame[self.current_workspace] = win
 
         try:
             borderless = 0
-            if(self.active_frame.id in self.borderless_windows):
+            if(self.active_frame[self.current_workspace].id in self.borderless_windows):
                 borderless = 1
             win.map()
             if(not borderless):
@@ -356,11 +396,20 @@ class SimplePyWM:
         self.root.grab_key(key_code, X.Mod1Mask, True, X.GrabModeAsync, X.GrabModeAsync)
         self.root.grab_key(key_code, X.Mod1Mask | X.ShiftMask, True, X.GrabModeAsync, X.GrabModeAsync)
 
+        for i in range(1, 9):
+            self.root.grab_key(
+                self.d.keysym_to_keycode(getattr(XK, f"XK_{i}")), X.Mod4Mask, True,
+                X.GrabModeAsync, X.GrabModeAsync
+            )
+
     def handle_key_press(self, event):
         key_sym = self.d.keycode_to_keysym(event.detail, 1)
         key_sym2 = self.d.keycode_to_keysym(event.detail, 0)
 
         if event.state & X.Mod4Mask:
+            if key_sym2 in (XK.XK_1, XK.XK_2, XK.XK_3, XK.XK_4, XK.XK_5, XK.XK_6, XK.XK_7, XK.XK_8, XK.XK_9):
+                ws = int(chr(key_sym2))
+                self.switch_workspace(ws)
             if key_sym == XK.XK_Q:
                 quit()
         
@@ -377,7 +426,7 @@ class SimplePyWM:
                 backwards = bool(event.state & X.ShiftMask)
                 self.cycle_windows(backwards)
 
-        if not self.active_frame:
+        if not self.active_frame[self.current_workspace]:
             return
         
         if event.state & X.ControlMask:
@@ -387,11 +436,11 @@ class SimplePyWM:
 
             frame_border = self.frame_border_width
 
-            if(self.active_frame.id in self.borderless_windows):
+            if(self.active_frame[self.current_workspace].id in self.borderless_windows):
                 frame_border = 0
-                frame = self.active_frame
+                frame = self.active_frame[self.current_workspace]
             else:
-                frame = self.client_to_frame[self.active_frame.id]
+                frame = self.client_to_frame[self.active_frame[self.current_workspace].id]
 
             if not frame:
                 return
@@ -404,7 +453,7 @@ class SimplePyWM:
                     height=screen_height - self.taskbar_height
                 )
                 if(frame_border):
-                    self.active_frame.configure(
+                    self.active_frame[self.current_workspace].configure(
                         x=1,
                         y=frame_border,
                         width=(screen_width // 2) - 2,
@@ -419,7 +468,7 @@ class SimplePyWM:
                     height=screen_height - self.taskbar_height
                 )
                 if(frame_border):
-                    self.active_frame.configure(
+                    self.active_frame[self.current_workspace].configure(
                         x=1,
                         y=frame_border,
                         width=(screen_width // 2) - 2,
@@ -434,7 +483,7 @@ class SimplePyWM:
                     height=screen_height // 2
                 )
                 if(frame_border):
-                    self.active_frame.configure(
+                    self.active_frame[self.current_workspace].configure(
                         x=1,
                         y=frame_border,
                         width=screen_width - 2,
@@ -449,7 +498,7 @@ class SimplePyWM:
                     height=screen_height // 2 - self.taskbar_height
                 )
                 if(frame_border):
-                    self.active_frame.configure(
+                    self.active_frame[self.current_workspace].configure(
                         x=1,
                         y=frame_border,
                         width=screen_width - 2,
@@ -476,7 +525,7 @@ class SimplePyWM:
         if event.window.id == self.taskbar.id:
             x = event.event_x
             for btn_x, client_id in self.taskbar_buttons:
-                if x >= btn_x and x < btn_x + self.screen.width_in_pixels // (len(self.frame_to_client) + len(self.borderless_windows)):
+                if x >= btn_x and x < btn_x + (self.screen.width_in_pixels - 20) // (len(self.window_stack[self.current_workspace])):
                     win = self.fetch_win_using_id(client_id)
                     self.set_active_frame(win)
                     break
@@ -738,7 +787,9 @@ class SimplePyWM:
         if self.wants_no_border(win):
             win.change_attributes(event_mask=X.ButtonPressMask | X.ButtonReleaseMask | X.SubstructureRedirectMask | X.SubstructureNotifyMask)
             win.map()
-            self.window_stack.append(win.id)
+            self.window_stack[self.current_workspace].append(win.id)
+
+            self.workspaces[self.current_workspace][win.id] = "max"
 
             self.borderless_windows[win.id] = win
             self.set_active_frame(win)
@@ -820,8 +871,10 @@ class SimplePyWM:
         self.client_to_frame[win_id] = frame
         self.frame_to_client[frame.id] = win
 
-        self.window_stack.append(win.id)
+        self.window_stack[self.current_workspace].append(win.id)
         self.frame_to_button_mapping[frame.id] = (btn_close, btn_max, btn_min)
+        
+        self.workspaces[self.current_workspace][win.id] = "max"
 
         self.frame_window_buttons[btn_close.id] = ("close", frame)
         self.frame_window_buttons[btn_max.id] = ("maximize", frame)
@@ -867,12 +920,12 @@ class SimplePyWM:
         
         if(not_tracked):
             return
-        if(win.id in self.window_stack):
-            if(self.active_frame.id == win.id):
-                idx = self.window_stack.index(win.id)
-                next_frame = self.window_stack[(idx - 1) % len(self.window_stack)]
+        if(win.id in self.window_stack[self.current_workspace]):
+            if(self.active_frame[self.current_workspace].id == win.id):
+                idx = self.window_stack[self.current_workspace].index(win.id)
+                next_frame = self.window_stack[self.current_workspace][(idx - 1) % len(self.window_stack[self.current_workspace])]
                 self.set_active_frame(self.fetch_win_using_id(next_frame))
-            self.window_stack.remove(win.id)
+            self.window_stack[self.current_workspace].remove(win.id)
         
         if(not borderless):
             del self.frame_to_client[frame.id]
@@ -881,14 +934,12 @@ class SimplePyWM:
         else:
             del self.borderless_windows[win.id]
         win.destroy()
+        del self.workspaces[self.current_workspace][win.id]
 
-        if(not self.frame_to_client):
-            if(not len(self.borderless_windows)):
-                self.active_frame = None
-                self.root.set_input_focus(X.RevertToPointerRoot, X.CurrentTime)
-                self.d.flush()
-        
-        logger.info(f"Window Stack: {self.window_stack}")
+        if(not len(self.window_stack[self.current_workspace])):
+            self.active_frame[self.current_workspace] = None
+            self.root.set_input_focus(X.RevertToPointerRoot, X.CurrentTime)
+            self.d.flush()
 
     def handle_unmap_notify(self, event):
         win_id = event.window.id
@@ -909,7 +960,9 @@ class SimplePyWM:
                 not_tracked = 1
         if(not_tracked):
             return
-        
+
+        if(win.id in self.workspaces[self.current_workspace]):
+            self.workspaces[self.current_workspace][win.id] = "min"
         if(not borderless):
             frame.unmap()
         win.unmap()

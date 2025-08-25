@@ -33,9 +33,10 @@ pacman -S python-xlib
 - Ctrl + Arrow Keys --> Snap Active window
 - Ctrl + Space      --> Dmenu Launcher
 - Ctrl + E          --> Open File manager
-- Windows + Q          --> Close Window Manager
-- Alt  + Tab        --> Switch to next window
+- Win + Q           --> Close Window Manager
+- Alt + Tab         --> Switch to next window
 - Shift + Alt + Tab --> Switch to previous window
+- Win + 1/2/3..9    --> Switch workspace
 
 ## Features
 - Window Snapping
@@ -43,10 +44,10 @@ pacman -S python-xlib
 - Window Minimizing, Maximizing, Closing
 - Taskbar
 - Alt-Tabbing windows
+- Workspaces
 
 ## WIP
 - Widgets for Battery, Wifi, Sound
-- Workspaces
 
 ## Fresh Install Caveats
 
