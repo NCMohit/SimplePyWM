@@ -190,7 +190,6 @@ class SimplePyWM:
         if(workspace_id == self.current_workspace):
             return
         
-        logger.info(self.workspaces)
 
         old_workspace = self.current_workspace
         self.current_workspace = workspace_id
@@ -786,7 +785,7 @@ class SimplePyWM:
             win.map()
             return
 
-        if win_id in self.client_to_frame:
+        if win_id in self.client_to_frame or win_id in self.borderless_windows:
             win.map()
             return
 
@@ -925,6 +924,7 @@ class SimplePyWM:
                 not_tracked = 1
         
         if(not_tracked):
+            event.window.destroy()
             return
         if(win.id in self.window_stack[self.current_workspace]):
             if(self.active_frame[self.current_workspace].id == win.id):

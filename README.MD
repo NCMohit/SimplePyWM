@@ -60,6 +60,7 @@ cp polybar_config.ini ~/.config/polybar/config.ini
 
 ## WIP
 - Install script on a fresh system
+- Screenshot integration
 
 ## Fresh Install Caveats
 
