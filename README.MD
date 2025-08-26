@@ -5,11 +5,11 @@ A simple Python Window Manager
 ## Installing Dependencies
 Arch-based
 ```
-sudo pacman -S xorg-server xorg-xinit python kitty dmenu lf
+sudo pacman -S xorg-server xorg-xinit python kitty dmenu lf polybar
 ```
 Debian-based
 ```
-sudo apt install xserver-xorg xinit python3 kitty dmenu lf
+sudo apt install xserver-xorg xinit python3 kitty dmenu lf polybar
 ```
 ## Installing python packages
 ```
@@ -20,7 +20,18 @@ pacman -S python-xlib
 ```
 ## Setup
 - Clone the repository into a {directory}
-- ```echo "exec python3 {directory}/main.py" > ~/.xinitrc```
+```
+git clone https://github.com/NCMohit/SimplePyWM.git
+```
+- Modify .xinitrc
+```
+echo "exec python3 {directory}/main.py" > ~/.xinitrc
+```
+- Copy polybar config to .config folder
+```
+mkdir -p ~/.config/polybar
+cp polybar_config.ini ~/.config/polybar/config.ini
+```
 - Run ```startx```
 
 ## Usage
@@ -45,9 +56,10 @@ pacman -S python-xlib
 - Taskbar
 - Alt-Tabbing windows
 - Workspaces
+- Status bar for Battery, Wifi, Sound using Polybar
 
 ## WIP
-- Widgets for Battery, Wifi, Sound
+- Install script on a fresh system
 
 ## Fresh Install Caveats
 

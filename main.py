@@ -35,6 +35,8 @@ default_config = {
             "taskbar": {
                 "height": 30,
                 "button_border_width": 2,
+                "workspace_width": 20,
+                "polybar_width": 550,
                 "background_color": "lightblue",
                 "button_active_background_color": "white",
                 "button_active_font_color": "black",
@@ -137,7 +139,7 @@ class SimplePyWM:
         self.taskbar = self.screen.root.create_window(
             x=0,
             y=self.screen.height_in_pixels - self.taskbar_height,
-            width=self.screen.width_in_pixels,
+            width=self.screen.width_in_pixels - config["display"]["window"]["taskbar"]["polybar_width"],
             height=self.taskbar_height,
             border_width=0,
             depth=self.screen.root_depth,
@@ -295,10 +297,10 @@ class SimplePyWM:
 
     def draw_taskbar(self):
 
-        width = self.screen.width_in_pixels - 20
+        width = self.screen.width_in_pixels - config["display"]["window"]["taskbar"]["workspace_width"] - config["display"]["window"]["taskbar"]["polybar_width"]
         n = len(self.window_stack[self.current_workspace])
 
-        self.taskbar.fill_rectangle(self.button_passive_background_color, self.button_border_width , self.button_border_width , 20 - 2*self.button_border_width, self.taskbar_height - 2*self.button_border_width)
+        self.taskbar.fill_rectangle(self.button_passive_background_color, self.button_border_width , self.button_border_width , config["display"]["window"]["taskbar"]["workspace_width"] - 2*self.button_border_width, self.taskbar_height - 2*self.button_border_width)
         self.taskbar.draw_text(self.button_passive_font_color, 6, self.taskbar_height // 2 + 5, str(self.current_workspace))
 
         if n == 0:
@@ -311,7 +313,7 @@ class SimplePyWM:
         for client_id in self.window_stack[self.current_workspace]:
             client = self.fetch_win_using_id(client_id)
             win_title = self.get_window_title(client)
-            x = (counter * btn_width) + 20
+            x = (counter * btn_width) + config["display"]["window"]["taskbar"]["workspace_width"]
             counter += 1
 
             self.taskbar_buttons.append((x, client_id))
@@ -525,7 +527,7 @@ class SimplePyWM:
         if event.window.id == self.taskbar.id:
             x = event.event_x
             for btn_x, client_id in self.taskbar_buttons:
-                if x >= btn_x and x < btn_x + (self.screen.width_in_pixels - 20) // (len(self.window_stack[self.current_workspace])):
+                if x >= btn_x and x < btn_x + (self.screen.width_in_pixels - config["display"]["window"]["taskbar"]["workspace_width"] - config["display"]["window"]["taskbar"]["polybar_width"]) // (len(self.window_stack[self.current_workspace])):
                     win = self.fetch_win_using_id(client_id)
                     self.set_active_frame(win)
                     break
@@ -779,6 +781,10 @@ class SimplePyWM:
     def handle_map_request(self, event):
         win = event.window
         win_id = win.id
+
+        if(self.get_window_title(win) == "Polybar"):
+            win.map()
+            return
 
         if win_id in self.client_to_frame:
             win.map()
